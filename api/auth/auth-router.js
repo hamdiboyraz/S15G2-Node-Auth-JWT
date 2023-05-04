@@ -1,8 +1,12 @@
 const router = require("express").Router();
-const { usernameVarmi, rolAdiGecerlimi } = require('./auth-middleware');
-const { JWT_SECRET } = require("../secrets"); // bu secret'ı kullanın!
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
 
-router.post("/register", rolAdiGecerlimi, (req, res, next) => {
+const { usernameVarmi, rolAdiGecerlimi } = require("./auth-middleware");
+const { JWT_SECRET } = require("../secrets"); // bu secret'ı kullanın!
+const userModel = require("../users/users-model");
+
+router.post("/register", rolAdiGecerlimi, async (req, res, next) => {
   /**
     [POST] /api/auth/register { "username": "anna", "password": "1234", "role_name": "angel" }
 
@@ -14,10 +18,17 @@ router.post("/register", rolAdiGecerlimi, (req, res, next) => {
       "role_name": "angel"
     }
    */
+  try {
+    let { username, password, role_name } = req.body;
+    password = bcrypt.hashSync(password);
+    const newUser = await userModel.ekle({ username, password, role_name });
+    res.status(201).json(newUser);
+  } catch (error) {
+    next(error);
+  }
 });
 
-
-router.post("/login", usernameVarmi, (req, res, next) => {
+router.post("/login", usernameVarmi, async (req, res, next) => {
   /**
     [POST] /api/auth/login { "username": "sue", "password": "1234" }
 
@@ -36,6 +47,26 @@ router.post("/login", usernameVarmi, (req, res, next) => {
       "role_name": "admin" // giriş yapan kulanıcının role adı
     }
    */
+  try {
+    const { username, password } = req.body;
+    const [user] = await userModel.goreBul({ username });
+    if (user && bcrypt.compareSync(password, user.password)) {
+      const tokenPayload = {
+        subject: user.user_id,
+        username: user.username,
+        role_name: user.role_name,
+      };
+      const tokenOptions = {
+        expiresIn: "1d",
+      };
+      const token = jwt.sign(tokenPayload, JWT_SECRET, tokenOptions);
+      res.status(200).json({ message: `${user.username} geri geldi!`, token });
+    } else {
+      res.status(401).json({ message: "Geçersiz kriter" });
+    }
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = router;
